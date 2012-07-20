@@ -62,4 +62,8 @@ public final class ValueService<T> implements Service<T> {
         }
         return value;
     }
+
+    public T getValueInternal() {
+    	return this.value.getValue();
+    }
 }
