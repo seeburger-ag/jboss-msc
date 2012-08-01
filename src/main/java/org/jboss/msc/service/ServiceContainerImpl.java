@@ -41,7 +41,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -57,6 +56,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.management.MBeanServer;
+import javax.management.Notification;
+import javax.management.NotificationBroadcasterSupport;
 import javax.management.ObjectName;
 
 import org.jboss.modules.management.ObjectProperties;
@@ -143,19 +144,12 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         }
     }
 
-    private final Writer profileOutput;
+    private final class ServiceContainerMXBeanImpl extends NotificationBroadcasterSupport implements ServiceContainerMXBean{
 
-    private TerminateListener.Info terminateInfo = null;
+        private boolean bootCompleted = false;
 
-    private volatile boolean down = false;
+        private boolean notificationSent = false;
 
-    private final ContainerExecutor executor;
-
-    private final String name;
-    private final MBeanServer mBeanServer;
-    private final ObjectName objectName;
-
-    private final ServiceContainerMXBean containerMXBean = new ServiceContainerMXBean() {
         public ServiceStatus getServiceStatus(final String name) {
             final ServiceRegistrationImpl registration = registry.get(ServiceName.parse(name));
             if (registration != null) {
@@ -206,6 +200,10 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
             ServiceContainerImpl.this.dumpServices();
         }
 
+        public void bootCompleted() {
+            bootCompleted = true;
+        }
+
         public String dumpServicesToString() {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             PrintStream ps = null;
@@ -222,7 +220,28 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
                 throw new IllegalStateException(e);
             }
         }
-    };
+
+        void notifyDeploymentComplete(){
+            if (bootCompleted && !notificationSent) {
+                notificationSent = true;
+                sendNotification(new Notification("DEPLOYMENT_COMPLETE", this, 0));
+            }
+        }
+    }
+
+    private final Writer profileOutput;
+
+    private TerminateListener.Info terminateInfo = null;
+
+    private volatile boolean down = false;
+
+    private final ContainerExecutor executor;
+
+    private final String name;
+    private final MBeanServer mBeanServer;
+    private final ObjectName objectName;
+
+    private final ServiceContainerMXBean containerMXBean = new ServiceContainerMXBeanImpl();
 
     ServiceContainerImpl(String name, int coreSize, long timeOut, TimeUnit timeOutUnit) {
         super(null);
@@ -688,6 +707,15 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
 
         protected void afterExecute(final Runnable r, final Throwable t) {
             super.afterExecute(r, t);
+            if (this.getQueue().size() == 0 && this.getActiveCount() == 1)
+            {
+                if (containerMXBean instanceof ServiceContainerMXBeanImpl)
+                {
+                   ((ServiceContainerMXBeanImpl)containerMXBean).notifyDeploymentComplete();
+                }
+            }
+
+
             if (t != null) {
                 HANDLER.uncaughtException(Thread.currentThread(), t);
             }

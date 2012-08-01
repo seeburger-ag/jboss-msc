@@ -73,4 +73,6 @@ public interface ServiceContainerMXBean {
      * @return the container state, as a string
      */
     String dumpServicesToString();
+
+    void bootCompleted();
 }
