@@ -91,16 +91,16 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         ServiceLogger.ROOT.greeting(Version.getVersionString());
     }
 
-    private final ConcurrentMap<ServiceName, ServiceRegistrationImpl> registry = new UnlockedReadHashMap<ServiceName, ServiceRegistrationImpl>(512);
+    protected final ConcurrentMap<ServiceName, ServiceRegistrationImpl> registry = new UnlockedReadHashMap<ServiceName, ServiceRegistrationImpl>(512);
 
     private final long start = System.nanoTime();
-    private long shutdownInitiated;
+    protected long shutdownInitiated;
 
     private final List<TerminateListener> terminateListeners = new ArrayList<TerminateListener>(1);
 
     private static final class ShutdownHookHolder {
-        private static final Set<Reference<ServiceContainerImpl, Void>> containers;
-        private static boolean down = false;
+        protected static final Set<Reference<ServiceContainerImpl, Void>> containers;
+        protected static boolean down = false;
 
         static {
             containers = new HashSet<Reference<ServiceContainerImpl, Void>>();
@@ -144,11 +144,13 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         }
     }
 
-    private final class ServiceContainerMXBeanImpl extends NotificationBroadcasterSupport implements ServiceContainerMXBean{
+    protected final class ServiceContainerMXBeanImpl extends NotificationBroadcasterSupport implements ServiceContainerMXBean{
 
         private boolean bootCompleted = false;
 
         private boolean notificationSent = false;
+
+        private boolean preShutdownNotificationSent = false;
 
         public ServiceStatus getServiceStatus(final String name) {
             final ServiceRegistrationImpl registration = registry.get(ServiceName.parse(name));
@@ -227,6 +229,13 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
                 sendNotification(new Notification("DEPLOYMENT_COMPLETE", this, 0));
             }
         }
+
+        void notifyPreShutdown(){
+            if (!preShutdownNotificationSent) {
+                preShutdownNotificationSent = true;
+                sendNotification(new Notification("PRE_SHUTDOWN", this, 0));
+            }
+        }
     }
 
     private final Writer profileOutput;
@@ -235,13 +244,13 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
 
     private volatile boolean down = false;
 
-    private final ContainerExecutor executor;
+    protected final ContainerExecutor executor;
 
     private final String name;
-    private final MBeanServer mBeanServer;
-    private final ObjectName objectName;
+    protected final MBeanServer mBeanServer;
+    protected final ObjectName objectName;
 
-    private final ServiceContainerMXBean containerMXBean = new ServiceContainerMXBeanImpl();
+    protected final ServiceContainerMXBean containerMXBean = new ServiceContainerMXBeanImpl();
 
     ServiceContainerImpl(String name, int coreSize, long timeOut, TimeUnit timeOutUnit) {
         super(null);
@@ -353,6 +362,9 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
             down = true;
             shutdownInitiated = System.nanoTime();
         }
+
+        preShutdown();//call all preShutdown listener
+
         shutdownListener = MultipleRemoveListener.create(new Runnable() {
             public void run() {
                 executor.shutdown();
@@ -409,7 +421,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         shutdown();
     }
 
-    private synchronized void shutdownComplete(long started) {
+    protected synchronized void shutdownComplete(long started) {
         terminateInfo = new TerminateListener.Info(started, System.nanoTime());
         for (TerminateListener terminateListener : terminateListeners) {
             try {
@@ -669,13 +681,13 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         }
     }
 
-    private static final AtomicInteger executorSeq = new AtomicInteger(1);
-    private static final Thread.UncaughtExceptionHandler HANDLER = new Thread.UncaughtExceptionHandler() {
+    protected static final AtomicInteger executorSeq = new AtomicInteger(1);
+    protected static final Thread.UncaughtExceptionHandler HANDLER = new Thread.UncaughtExceptionHandler() {
         public void uncaughtException(final Thread t, final Throwable e) {
             ServiceLogger.ROOT.uncaughtException(e, t);
         }
     };
-    private static final ThreadPoolExecutor.CallerRunsPolicy POLICY = new ThreadPoolExecutor.CallerRunsPolicy();
+    protected static final ThreadPoolExecutor.CallerRunsPolicy POLICY = new ThreadPoolExecutor.CallerRunsPolicy();
 
     static class ServiceThread extends Thread {
         private final ServiceContainerImpl container;
@@ -725,4 +737,12 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
             shutdownComplete(shutdownInitiated);
         }
     }
+
+
+    private synchronized void preShutdown() {
+        //begin of pre-shutdown phase
+        ((ServiceContainerMXBeanImpl)containerMXBean).notifyPreShutdown();
+    }
+
+
 }
