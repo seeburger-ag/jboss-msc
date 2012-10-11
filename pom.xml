@@ -37,7 +37,15 @@
     <version>1.0.2.SEE1-SNAPSHOT</version>
     <name>JBoss Modular Service Container</name>
 
+    <scm>
+        <connection>scm:git:${jboss.as.scm.connection}</connection>
+        <developerConnection>scm:git:${jboss.as.scm.connection}</developerConnection>
+        <url>${jboss.as.scm.url}</url>
+    </scm>
+
     <properties>
+        <jboss.as.scm.url>https://github.com/seeburger-ag/jboss-msc</jboss.as.scm.url>
+        <jboss.as.scm.connection>git@github.com:seeburger-ag/jboss-msc.git</jboss.as.scm.connection>
         <byteman-version>1.5.1</byteman-version>
         <version.jboss-logmanager>1.2.0.GA</version.jboss-logmanager>
     </properties>
