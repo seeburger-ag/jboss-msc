@@ -704,6 +704,8 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
 
     final class ContainerExecutor extends ThreadPoolExecutor {
 
+        private final AtomicInteger activeWorkers = new AtomicInteger();
+
         ContainerExecutor(final int corePoolSize, final int maximumPoolSize, final long keepAliveTime, final TimeUnit unit) {
             super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedBlockingQueue<Runnable>(), new ThreadFactory() {
                 private final int id = executorSeq.getAndIncrement();
@@ -717,9 +719,11 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
             }, POLICY);
         }
 
-        protected void afterExecute(final Runnable r, final Throwable t) {
+        protected void afterExecute(final Runnable r, final Throwable t) 
+        {
+            int workerCountActive = activeWorkers.decrementAndGet();
             super.afterExecute(r, t);
-            if (this.getQueue().size() == 0 && this.getActiveCount() == 1)
+            if (this.getQueue().isEmpty() && workerCountActive == 0)
             {
                 if (containerMXBean instanceof ServiceContainerMXBeanImpl)
                 {
@@ -727,10 +731,17 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
                 }
             }
 
-
-            if (t != null) {
+            if (t != null) 
+            {
                 HANDLER.uncaughtException(Thread.currentThread(), t);
             }
+        }
+
+        @Override
+        protected void beforeExecute(Thread t, Runnable r)
+        {
+            activeWorkers.incrementAndGet();
+            super.beforeExecute(t, r);
         }
 
         protected void terminated() {
