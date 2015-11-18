@@ -203,6 +203,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         }
 
         public void bootCompleted() {
+            ServiceLogger.ROOT.bootComplete();
             bootCompleted = true;
         }
 
@@ -227,6 +228,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
             if (bootCompleted && !notificationSent) {
                 notificationSent = true;
                 sendNotification(new Notification("DEPLOYMENT_COMPLETE", this, 0));
+                ServiceLogger.ROOT.deploymentsComplete();
             }
         }
 
@@ -719,7 +721,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
             }, POLICY);
         }
 
-        protected void afterExecute(final Runnable r, final Throwable t) 
+        protected void afterExecute(final Runnable r, final Throwable t)
         {
             int workerCountActive = activeWorkers.decrementAndGet();
             super.afterExecute(r, t);
@@ -731,7 +733,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
                 }
             }
 
-            if (t != null) 
+            if (t != null)
             {
                 HANDLER.uncaughtException(Thread.currentThread(), t);
             }

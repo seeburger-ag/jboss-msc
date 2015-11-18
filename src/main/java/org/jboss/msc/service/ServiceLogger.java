@@ -89,4 +89,12 @@ interface ServiceLogger {
 
     @Message(id = 11, value = "Service not started")
     IllegalStateException serviceNotStarted();
+
+    @LogMessage(level = INFO)
+    @Message(id = 12, value = "JBoss boot phase complete.")
+    void bootComplete();
+
+    @LogMessage(level = INFO)
+    @Message(id = 13, value = "JBoss deployment phase complete, notification sent.")
+    void deploymentsComplete();
 }
