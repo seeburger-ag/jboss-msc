@@ -32,7 +32,7 @@
 
     <groupId>com.seeburger.as</groupId>
     <artifactId>jboss-msc</artifactId>
-    <version>1.0.2.SEE2-SNAPSHOT</version>
+    <version>1.0.2.SEE2</version>
     <name>JBoss Modular Service Container</name>
 
     <scm>
