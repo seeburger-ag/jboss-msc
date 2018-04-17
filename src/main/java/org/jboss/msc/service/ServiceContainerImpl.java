@@ -22,6 +22,7 @@
 
 package org.jboss.msc.service;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.modules.management.ObjectProperties.property;
 
 import java.io.ByteArrayOutputStream;
@@ -32,20 +33,22 @@ import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 import java.lang.management.ManagementFactory;
-import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -83,7 +86,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
     static final String PROFILE_OUTPUT;
 
     static {
-        PROFILE_OUTPUT = AccessController.doPrivileged(new PrivilegedAction<String>() {
+        PROFILE_OUTPUT = doPrivileged(new PrivilegedAction<String>() {
             public String run() {
                 return System.getProperty("jboss.msc.profile.output");
             }
@@ -91,7 +94,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         ServiceLogger.ROOT.greeting(Version.getVersionString());
     }
 
-    protected final ConcurrentMap<ServiceName, ServiceRegistrationImpl> registry = new UnlockedReadHashMap<ServiceName, ServiceRegistrationImpl>(512);
+    protected final ConcurrentMap<ServiceName, ServiceRegistrationImpl> registry = new ConcurrentHashMap<ServiceName, ServiceRegistrationImpl>(512);
 
     private final long start = System.nanoTime();
     protected long shutdownInitiated;
@@ -104,7 +107,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
 
         static {
             containers = new HashSet<Reference<ServiceContainerImpl, Void>>();
-            AccessController.doPrivileged(new PrivilegedAction<Void>() {
+            doPrivileged(new PrivilegedAction<Void>() {
                 public Void run() {
                     final Thread hook = new Thread(new Runnable() {
                         public void run() {
@@ -637,6 +640,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
     private void detectCircularity(IdentityHashSet<? extends Dependent> dependents, ServiceControllerImpl<?> instance, Set<ServiceControllerImpl<?>> visited,  Deque<ServiceName> visitStack) {
         for (Dependent dependent: dependents) {
             final ServiceControllerImpl<?> controller = dependent.getController();
+            if (controller == null) continue; // [MSC-145] optional dependencies may return null
             if (controller == instance) {
                 // change cycle from dependent order to dependency order
                 ServiceName[] cycle = new ServiceName[visitStack.size()];
@@ -647,7 +651,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
                     cycle[i] = cycle[j];
                     cycle[j] = temp;
                 }
-                throw new CircularDependencyException("Service " + name + " has a circular dependency", cycle);
+                throw new CircularDependencyException("Container " + name + " has a circular dependency: " + Arrays.asList(cycle), cycle);
             }
             if (visited.add(controller)) {
                 synchronized (controller) {
@@ -704,6 +708,27 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
         }
     }
 
+    final class ThreadAction implements PrivilegedAction<ServiceThread> {
+
+        private final Runnable r;
+        private final int id;
+        private final AtomicInteger threadSeq;
+
+        ThreadAction(final Runnable r, final int id, final AtomicInteger threadSeq) {
+            this.r = r;
+            this.id = id;
+            this.threadSeq = threadSeq;
+        }
+
+        public ServiceThread run() {
+            ServiceThread thread = new ServiceThread(r, ServiceContainerImpl.this);
+            thread.setName(String.format("MSC service thread %d-%d", Integer.valueOf(id), Integer.valueOf(threadSeq.getAndIncrement())));
+            thread.setUncaughtExceptionHandler(HANDLER);
+            return thread;
+        }
+    }
+
+
     final class ContainerExecutor extends ThreadPoolExecutor {
 
         private final AtomicInteger activeWorkers = new AtomicInteger();
@@ -713,10 +738,7 @@ final class ServiceContainerImpl extends ServiceTargetImpl implements ServiceCon
                 private final int id = executorSeq.getAndIncrement();
                 private final AtomicInteger threadSeq = new AtomicInteger(1);
                 public Thread newThread(final Runnable r) {
-                    Thread thread = new ServiceThread(r, ServiceContainerImpl.this);
-                    thread.setName(String.format("MSC service thread %d-%d", Integer.valueOf(id), Integer.valueOf(threadSeq.getAndIncrement())));
-                    thread.setUncaughtExceptionHandler(HANDLER);
-                    return thread;
+                    return doPrivileged(new ThreadAction(r, id, threadSeq));
                 }
             }, POLICY);
         }
